@@ -1,5 +1,11 @@
 import mf2py
-from urlparse import urlparse
+
+try:
+    # python 2
+    from urlparse import urlparse
+except ImportError:
+    # python 3
+    from urllib.parse import urlparse
 
 def parse(url):
     return mf2py.parse(url=url, html_parser="html5lib")
