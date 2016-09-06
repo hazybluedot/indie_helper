@@ -1,14 +1,15 @@
 import mf2py
+import bleach
+import sys
 
-try:
-    # python 2
+if sys.version < '3':
     from urlparse import urlparse
-except ImportError:
-    # python 3
+    text_type = unicode
+    binary_type = str
+else:
     from urllib.parse import urlparse
-
-def parse(url):
-    return mf2py.parse(url=url, html_parser="html5lib")
+    text_type = str
+    binary_type = bytes
 
 def first_entry(p, htype='h-entry'):
     try:
@@ -30,11 +31,14 @@ def url_from_entry(url_or_entry):
         return url_or_entry
 
 def is_url(url):
-    parts = urlparse(url)
+    try:
+        parts = urlparse(url)
+    except TypeError:
+        return False
     return parts.scheme in [ 'http', 'https' ]
 
 def is_hcard(entry):
-    return hasattr(entry, "get") and entry.get("type", "") == "h-card"
+    return hasattr(entry, "get") and 'h-card' in entry.get("type", "")
 
 def entry_from_url(url):
     assert(is_url(url))
@@ -48,7 +52,7 @@ def entry_from_url(url):
     return entry, rels
 
 def follow_url(prop):
-    if type(prop) in [ str, unicode ]:
+    if type(prop) in [ str, text_type ]:
         return prop
     else:
         ## Will probably need to do exception handling
@@ -85,11 +89,40 @@ def author_card(entry, rels):
         author = extract_author(entry, rels)
         # if author looks like a url, extract it to find an h_card
 
-def mention_from_url(url):
-    mfdata = parse(url)
-    card = first_card(mfdata)
-    entry = first_entry(mfdata)
+#bleach.ALLOWED_TAGS + ['p']
+ALLOWED_TAGS=bleach.ALLOWED_TAGS + ['p']
 
+def clean(text):
+    return bleach.clean(text, tags=ALLOWED_TAGS)
+
+def bleachify(entry):
+    ## todo for each property
+    if hasattr(entry, 'items'):
+        return dict([ (prop, bleachify(value)) for prop, value in entry.items() ])
+    elif type(entry) is list:
+        return map(clean, entry)
+    elif type(entry) in [str, text_type]:
+        return clean(entry)
+    else:
+        print('unhandled type of entry: {0}'.format(type(entry)))
+        return None
+    
+def mention_from_url(url):
+    mfdata = mf2py.parse(url=url, html_parser="html5lib")
+    return _mention(mfdata)
+
+def mention_from_doc(doc):
+    mfdata = mf2py.parse(doc=doc, html_parser="html5lib")
+    return _mention(mfdata)
+
+def _mention(mfdata):
+    entry = bleachify(first_entry(mfdata))
+
+    #if "content" in entry["properties"].keys():
+    #    content = entry["properties"]["content"][0]["html"]
+    #    entry["properties"]["content"] = [{ "html": bleach.clean(content) }]
+
+    
     mention = {
         'mention': entry,
         'in-reply-to': in_reply_to(mfdata),
@@ -97,8 +130,12 @@ def mention_from_url(url):
 
     author = author_of_entry(entry)
     if author is None:
-        mention['author'] = None
+        mention['author'] = bleachify(first_card(mfdata))
     elif is_hcard(author):
+        # TODO: does it make sense to duplicate content here, author
+        # is already in the entry always putting it on the author
+        # property makes client side easier. We could strip it from
+        # the entry if found...?
         mention['author'] = author
     elif is_url(author):
         mention['author-page'] = author
