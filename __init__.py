@@ -5,11 +5,20 @@ import sys
 if sys.version < '3':
     from urlparse import urlparse
     text_type = unicode
+    text_types = [ str, unicode ]
     binary_type = str
 else:
     from urllib.parse import urlparse
     text_type = str
+    text_types = [ str ]
     binary_type = bytes
+
+def is_url(url):
+    try:
+        parts = urlparse(url)
+    except TypeError:
+        return False
+    return parts.scheme in [ 'http', 'https' ]
 
 def first_entry(p, htype='h-entry'):
     try:
@@ -21,21 +30,14 @@ def first_card(p):
     card = first_entry(p, 'h-card')
 
     if card is None:
-        return filter(lambda rel: rel[0] == 'me', p['rels'].items())
+        return filter(lambda rel: rel == 'me', p['rels'].items())
     return card
 
 def url_from_entry(url_or_entry):
     if hasattr(url_or_entry, 'keys') and 'properties' in url_or_entry.keys():
-        return url_or_entry['properties']['url'][0]
+        return url_or_entry['properties']['url']
     else:
         return url_or_entry
-
-def is_url(url):
-    try:
-        parts = urlparse(url)
-    except TypeError:
-        return False
-    return parts.scheme in [ 'http', 'https' ]
 
 def is_hcard(entry):
     return hasattr(entry, "get") and 'h-card' in entry.get("type", "")
@@ -56,38 +58,38 @@ def follow_url(prop):
         return prop
     else:
         ## Will probably need to do exception handling
-        return prop['properties']['url'][0]
+        return prop['properties']['url']
+
+def flatten(item):
+    if type(item) in [ list, tuple ] and len(item) == 1:
+        return item[0]
+    else:
+        return item
     
 def in_reply_to(mfdata):
     entry = first_entry(mfdata)
 
     reply_tos = []
     if entry is not None:
-        reply_tos = list(set([ follow_url(p) for p in entry['properties'].get('in-reply-to', []) ]))
+        reply_tos = list(set([ flatten(follow_url(p)) for p in entry['properties'].get('in-reply-to', []) ]))
 
     if len(reply_tos) == 0:
         # get any reply-to in rel
         reply_tos = mfdata['rels'].get('in-reply-to', [])
         
     return reply_tos
-
-def url_of_entry(entry):
-    if entry is None:
-        return None
-    props = entry['properties']
-    return props.get('uri', props.get('url', [None]))[0]
     
 def author_of_entry(entry):
     if entry is None:
         return None
     try:
-        return entry['properties']['author'][0]
+        return entry['properties']['author']
     except KeyError:
         None    
 
 def author_card(entry, rels):
-        author = extract_author(entry, rels)
-        # if author looks like a url, extract it to find an h_card
+    ## TODO: implement authorship algorithm from indieweb
+    pass
 
 #bleach.ALLOWED_TAGS + ['p']
 ALLOWED_TAGS=bleach.ALLOWED_TAGS + ['p']
@@ -100,8 +102,12 @@ def bleachify(entry):
     if hasattr(entry, 'items'):
         return dict([ (prop, bleachify(value)) for prop, value in entry.items() ])
     elif type(entry) is list:
-        return map(clean, entry)
-    elif type(entry) in [str, text_type]:
+        ## to flatten the list-of-one values that mf2py generates
+        if len(entry) == 1:
+            return bleachify(entry[0])
+        else:
+            return map(bleachify, entry)
+    elif type(entry) in text_types:
         return clean(entry)
     else:
         print('unhandled type of entry: {0}'.format(type(entry)))
@@ -136,9 +142,9 @@ def _mention(mfdata):
         # is already in the entry always putting it on the author
         # property makes client side easier. We could strip it from
         # the entry if found...?
-        mention['author'] = author
+        mention['mention']['properties']['author'] = author
     elif is_url(author):
-        mention['author-page'] = author
+        mention['mention']['properties']['author-page'] = author
 
     return mention
         
