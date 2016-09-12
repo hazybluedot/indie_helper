@@ -28,15 +28,24 @@ def flatten(item):
         return item
 
 #bleach.ALLOWED_TAGS + ['p']
-ALLOWED_TAGS=bleach.ALLOWED_TAGS + ['p']
+ALLOWED_TAGS=bleach.ALLOWED_TAGS + ['p', 'span']
 
 def clean(text):
     return bleach.clean(text, tags=ALLOWED_TAGS)
 
-def bleachify(entry):
+def clean_url(url):
+    if url.startswith('javascript:'):
+        return '';
+    return url
+
+def bleachify(entry, key=None):
     ## todo for each property
+    if key == 'url':
+        bleached = bleachify(entry)
+        return [ clean_url(u) for u in bleached ]
+    
     if hasattr(entry, 'items'):
-        return dict([ (prop, bleachify(value)) for prop, value in entry.items() ])
+        return dict([ (prop, bleachify(value, prop)) for prop, value in entry.items() ])
     elif type(entry) is list:
         ## to flatten the list-of-one values that mf2py generates
         ## I have revisited this and decided to keep single element lists as this seems to be part of the mf2 defined format

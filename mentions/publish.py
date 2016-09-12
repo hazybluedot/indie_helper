@@ -9,6 +9,7 @@ from datetime import datetime
 from slugify import slugify
 
 from indie_helper import mention_from_url, mention_from_doc
+from indie_helper.util import bleachify
 
 # patch JSON encoder to handle datetime objects, see http://stackoverflow.com/questions/455580/json-datetime-between-python-and-javascript#3235787
 json.JSONEncoder.default = lambda self,obj: (obj.isoformat() if hasattr(obj, 'isoformat') else None)
@@ -21,40 +22,10 @@ def post_id_from_url(url):
     u = urlparse(url)
     return u.path.split('/')[-1]
 
-def publish(source, target, endpoint, **kwargs):
+
+def update_record(endpoint, data):
     now = isonow() #datetime.now(timezone('UTC'))
-
-    data = kwargs.get('data', {})
-    verified = data['verified'].get('state', False)
-
-    if isinstance(target, list):
-        real_target = target[-1]['url']
-    else:
-        real_target = data.get('real_target', target)
-    post_id = post_id_from_url(real_target)
-    
-    _id = slugify(u'mention-{0}'.format(source))
-    
-    _endpoint = endpoint.format(_id)
-
-    mentions = {}
-    if verified:
-        content = kwargs.get('body', None)
-        if content is not None:
-            mentions = mention_from_doc(content)
-        else:
-            mentions = mention_from_url(source)
-        
-    data.update({
-        '_id': _id, 
-        'post_id': post_id,
-        'type': 'mention',
-        'format': 'mf2py'
-    })
-
-    data.update(mentions)
-    
-    r = requests.get(_endpoint)
+    r = requests.get(endpoint)
     if r.status_code == 200:
         current = r.json()
 
@@ -77,6 +48,42 @@ def publish(source, target, endpoint, **kwargs):
             
     #print('PUT {0}'.format(endpoint))
     #print('data: {0}'.format(json.dumps(data)))
-    r = requests.put(_endpoint, json.dumps(data))
-    if r.status_code not in [ 201, 202 ]:
-        print('PUT {0} [{1}] ({2})'.format(_endpoint, r.status_code, r.text))
+    r = requests.put(endpoint, json.dumps(data))
+    return {
+        'endpoint': endpoint,
+        'response': r
+    }
+    
+def publish(source, target, endpoint, **kwargs):
+    data = kwargs.get('data', {})
+    data['_id'] = slugify(u'mention-{0}'.format(source))
+
+    verified = data['verified'].get('state', False)
+
+    if isinstance(target, list):
+        real_target = target[-1]['url']
+    else:
+        real_target = data.pop('real_target', target)
+    post_id = post_id_from_url(real_target)
+
+    if verified:
+        content = kwargs.get('body', None)
+        if content is not None:
+            mfdata = mf2py.parse(doc=content, html_parser="html5lib")
+            #mentions = mention_from_doc(content)
+        else:
+            mfdata = mf2py.parse(url=url, html_parser="html5lib")
+            #mentions = mention_from_url(source)
+
+    mfdata['items'] = [ bleachify(item) for item in mfdata['items'] ]
+    
+    data.update({
+        'post_id': post_id,
+        'type': 'mention',
+        'format': 'mf2py'
+    })
+
+    data['data'] = mfdata
+
+    res = update_record(endpoint.format(data['_id']), data)
+    return res

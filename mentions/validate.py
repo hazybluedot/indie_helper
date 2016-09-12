@@ -39,7 +39,7 @@ def make_response(source, target, state, res, reason, extra={}):
 
 def _failure(update_state, source, target, res, reason):
     meta =  make_response(source, target, False, res, reason)
-    update_state(state='FAILURE', meta=meta)
+    update_state(state='FAILURE')
     return meta
         
 def validate(source, target, **kwargs):
