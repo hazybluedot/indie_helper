@@ -55,14 +55,15 @@ def follow_redirects(url, max_depth):
     return resolved url. 
     Raises TooManyRedirects exception if max_depth is exceeded"""
     
-    def _wrapped(url, depth):
+    def _wrapped(url, depth, acc):
         if depth > max_depth:
             raise TooManyRedirects('following redirects on {0} exceeded maximum depth of {1}'.format(url, max_depth))
         
         r = requests.head(url)
+        acc.append( { 'url': url, 'status_code': r.status_code} )
         if r.status_code in [ 301, 302 ]:
-            return _wrapped(r.headers['Location'], depth+1)
+            return _wrapped(r.headers['Location'], depth+1, acc)
         else:
-            return url, r
+            return acc
 
-    return _wrapped(url, 0)
+    return _wrapped(url, 0, [])

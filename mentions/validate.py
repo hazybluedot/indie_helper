@@ -64,23 +64,30 @@ def validate(source, target, **kwargs):
     update_state('PROCESSING')
         
     #is target a valid resource belonging to me?
+    real_target = None
+    acc = []
     if validate_target:    
         update_state('CHECKING_TARGET')
         try:
-            real_target, res = follow_redirects(target, 10)
+            acc = follow_redirects(target, 10)
         except requests.ConnectionError:
             #return failure(res, 'Connection error')
             raise InvalidResource('invalid target resource')
         else:
-            if res.status_code != 200:
+            final_target = acc[-1]
+            real_target = final_target['url']
+            target = acc
+            if final_target['status_code'] != 200:
+                print('target "{0}" got [{1}]'.format(target, res.status_code))
                 raise InvalidResource('Target not available')
             #does target belong to me?
         url_parts = urlparse(real_target)
         if managed_hosts is not None and url_parts.hostname not in managed_hosts:
             #print('{0} not in {1}'.format(url_parts.hostname, managed_hosts))
-            raise InvalidResource('I do not manage {0}'.format(target))
+            raise InvalidResource('I do not manage {0}'.format(acc[0]['url']))
             #return failure(res, 'I do not manage this target')
         
+
     #does source exist
     update_state('RETREIVING_SOURCE')
     try:
@@ -105,7 +112,7 @@ def validate(source, target, **kwargs):
 
     soup = BeautifulSoup(content, "html5lib")
 
-    tag = soup.find('a', attrs={'href': target})
+    tag = soup.find('a', attrs={'href': target[0]['url']})
     if not tag:
         return failure(r, 'source does not link to target')
 

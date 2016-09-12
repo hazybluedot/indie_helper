@@ -23,10 +23,15 @@ def post_id_from_url(url):
 
 def publish(source, target, endpoint, **kwargs):
     now = isonow() #datetime.now(timezone('UTC'))
-    post_id = post_id_from_url(target)
 
     data = kwargs.get('data', {})
     verified = data['verified'].get('state', False)
+
+    if isinstance(target, list):
+        real_target = target[-1]['url']
+    else:
+        real_target = data.get('real_target', target)
+    post_id = post_id_from_url(real_target)
     
     _id = slugify(u'mention-{0}'.format(source))
     
