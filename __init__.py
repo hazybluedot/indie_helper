@@ -1,5 +1,4 @@
 import mf2py
-import bleach
 import sys
 
 if sys.version < '3':
@@ -13,12 +12,8 @@ else:
     text_types = [ str ]
     binary_type = bytes
 
-def is_url(url):
-    try:
-        parts = urlparse(url)
-    except TypeError:
-        return False
-    return parts.scheme in [ 'http', 'https' ]
+
+from indie_helper.util import is_url, flatten, bleachify
 
 def first_entry(p, htype='h-entry'):
     try:
@@ -40,7 +35,7 @@ def url_from_entry(url_or_entry):
         return url_or_entry
 
 def is_hcard(entry):
-    return hasattr(entry, "get") and 'h-card' in entry.get("type", "")
+    return hasattr(entry, "get") and 'h-card' in entry.get("type", [])
 
 def entry_from_url(url):
     assert(is_url(url))
@@ -53,32 +48,37 @@ def entry_from_url(url):
     #    properties.update(e['properties'])
     return entry, rels
 
-def follow_url(prop):
-    if type(prop) in [ str, text_type ]:
+def closest_url(prop):
+    if hasattr(prop, 'get') and prop.get('type', None) == 'h-cite':
+        return prop['properties']['url']
+    elif type(prop) in [ str, text_type ] and is_url(prop):
         return prop
     else:
         ## Will probably need to do exception handling
-        return prop['properties']['url']
-
-def flatten(item):
-    if type(item) in [ list, tuple ] and len(item) == 1:
-        return item[0]
-    else:
-        return item
+        return None
     
 def in_reply_to(mfdata):
     entry = first_entry(mfdata)
-
+    
     reply_tos = []
     if entry is not None:
-        reply_tos = list(set([ flatten(follow_url(p)) for p in entry['properties'].get('in-reply-to', []) ]))
+        reply_tos = list(set([ flatten(closest_url(p)) for p in entry['properties'].get('in-reply-to', []) ]))
 
     if len(reply_tos) == 0:
         # get any reply-to in rel
         reply_tos = mfdata['rels'].get('in-reply-to', [])
         
     return reply_tos
-    
+
+author_by_type = {
+    'h-card' : lambda card: { },
+    'h-cite' : lambda card: { }
+}
+
+def author_of_url(url):
+    mfdata = mf2py.parse(url=url, html_parser="html5lib")
+    return first_card(mfdata) # TODO: filter for rel=me
+
 def author_of_entry(entry):
     if entry is None:
         return None
@@ -90,28 +90,6 @@ def author_of_entry(entry):
 def author_card(entry, rels):
     ## TODO: implement authorship algorithm from indieweb
     pass
-
-#bleach.ALLOWED_TAGS + ['p']
-ALLOWED_TAGS=bleach.ALLOWED_TAGS + ['p']
-
-def clean(text):
-    return bleach.clean(text, tags=ALLOWED_TAGS)
-
-def bleachify(entry):
-    ## todo for each property
-    if hasattr(entry, 'items'):
-        return dict([ (prop, bleachify(value)) for prop, value in entry.items() ])
-    elif type(entry) is list:
-        ## to flatten the list-of-one values that mf2py generates
-        if len(entry) == 1:
-            return bleachify(entry[0])
-        else:
-            return map(bleachify, entry)
-    elif type(entry) in text_types:
-        return clean(entry)
-    else:
-        print('unhandled type of entry: {0}'.format(type(entry)))
-        return None
     
 def mention_from_url(url):
     mfdata = mf2py.parse(url=url, html_parser="html5lib")
